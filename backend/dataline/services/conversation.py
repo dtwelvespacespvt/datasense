@@ -161,14 +161,15 @@ class ConversationService:
         pattern = f"<(.+?)>"
         glossary_words =  re.findall(pattern, query)
         for message in history:
-            if message.type == BaseMessageType.HUMAN.value:
+            if message.type == BaseMessageType.HUMAN.value and message.content:
                 glossary_words.extend(re.findall(pattern, message.content))
         if not glossary_words:
             return query
         glossary_words = set(glossary_words)
         query += "\n\n#####Glossary#######\n"
         for glossary_word in glossary_words:
-            query += glossary_word +": "+glossary.get(glossary_word)+"\n"
+            if glossary_word in glossary:
+                query += glossary_word +": "+glossary.get(glossary_word)+"\n"
         return query
 
     @classmethod

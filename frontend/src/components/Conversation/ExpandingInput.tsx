@@ -8,6 +8,7 @@ import {
   forwardRef,
   useRef,
   useState,
+  useEffect,
 } from "react";
 import { Switch, SwitchField, SwitchGroup } from "../Catalyst/switch";
 import { Description, Fieldset, Label } from "../Catalyst/fieldset";
@@ -116,6 +117,18 @@ const ExpandingInput = forwardRef<HTMLTextAreaElement, ExpandingInputProps>(
       []
     );
     const [showSuggestions, setShowSuggestions] = useState(false);
+    const [selectedIndex, setSelectedIndex] = useState(0);
+    const suggestionRefs = useRef<(HTMLLIElement | null)[]>([]);
+
+    // Auto-scroll to selected item
+    useEffect(() => {
+      if (selectedIndex >= 0 && suggestionRefs.current[selectedIndex]) {
+        suggestionRefs.current[selectedIndex]?.scrollIntoView({
+          block: "nearest",
+          behavior: "smooth",
+        });
+      }
+    }, [selectedIndex]);
 
     const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const value = e.target.value;
@@ -134,8 +147,10 @@ const ExpandingInput = forwardRef<HTMLTextAreaElement, ExpandingInputProps>(
         );
         setFilteredSuggestions(filtered);
         setShowSuggestions(filtered.length > 0);
+        setSelectedIndex(0);
       } else {
         setShowSuggestions(false);
+        setSelectedIndex(0);
       }
     };
 
@@ -149,29 +164,41 @@ const ExpandingInput = forwardRef<HTMLTextAreaElement, ExpandingInputProps>(
     const handleSubmit = () => {
       if (disabled || inputValue.length === 0) return;
 
-      let transformed = inputValue;
-
-      // Sort tags by length descending so longer phrases match first
-      const sortedTags = suggestions.sort((a, b) => b.length - a.length);
-
-      for (const tag of sortedTags) {
-        const tagRegex = new RegExp(`\\b${tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, "gi");
-        const tags = autoCompleteList[tag];
-
-        if (tags.includes("uniqueKey")) {
-          transformed = transformed.replace(tagRegex, `[${tag}]`);
-        } else if (tags.includes("glossary")) {
-          transformed = transformed.replace(tagRegex, `<${tag}>`);
-        }
-      }
-
-      onSubmit(transformed);
+      onSubmit(inputValue);
       setInputValue("");
       setShowSuggestions(false);
     };
 
 
     const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (showSuggestions && filteredSuggestions.length > 0) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setSelectedIndex((prev) => 
+            prev < filteredSuggestions.length - 1 ? prev + 1 : prev
+          );
+          return;
+        }
+        
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
+          return;
+        }
+        
+        if (e.key === "Tab") {
+          e.preventDefault();
+          insertSuggestionAtCaret(filteredSuggestions[selectedIndex]);
+          return;
+        }
+        
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setShowSuggestions(false);
+          return;
+        }
+      }
+      
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         handleSubmit();
@@ -192,16 +219,26 @@ const ExpandingInput = forwardRef<HTMLTextAreaElement, ExpandingInputProps>(
       const match = textBefore.match(/(\w{3,})$/);
       const replaceStart = match ? start - match[1].length : start;
 
+      const tags = autoCompleteList[suggestion];
+      let wrappedSuggestion = suggestion;
+      
+      if (tags?.includes("uniqueKey")) {
+        wrappedSuggestion = `[${suggestion}]`;
+      } else if (tags?.includes("glossary")) {
+        wrappedSuggestion = `<${suggestion}>`;
+      }
+
       const newValue =
         inputValue.substring(0, replaceStart) +
-        suggestion +
+        wrappedSuggestion +
         " " +
         textAfter;
       setInputValue(newValue);
       setShowSuggestions(false);
+      setSelectedIndex(0);
 
       setTimeout(() => {
-        const newPos = replaceStart + suggestion.length + 1;
+        const newPos = replaceStart + wrappedSuggestion.length + 1;
         textarea.setSelectionRange(newPos, newPos);
         textarea.focus();
       }, 0);
@@ -228,13 +265,21 @@ const ExpandingInput = forwardRef<HTMLTextAreaElement, ExpandingInputProps>(
 
         {showSuggestions && filteredSuggestions.length > 0 && (
           <ul className="absolute z-10 mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg text-sm w-full max-h-48 overflow-y-auto left-0 bottom-full">
-            {filteredSuggestions.map((s) => (
+            {filteredSuggestions.map((s, index) => (
               <li
                 key={s}
-                className="px-4 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200"
+                ref={(el) => (suggestionRefs.current[index] = el)}
+                className={classNames(
+                  "px-4 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2",
+                  index === selectedIndex ? "bg-gray-100 dark:bg-gray-700" : ""
+                )}
                 onClick={() => insertSuggestionAtCaret(s)}
+                onMouseEnter={() => setSelectedIndex(index)}
               >
-                {s}
+                <span className="text-gray-900 dark:text-gray-200">{s}</span>
+                {index === selectedIndex && (
+                  <span className="ml-auto text-xs text-gray-400 dark:text-gray-500 font-mono">Tab</span>
+                )}
               </li>
             ))}
           </ul>
