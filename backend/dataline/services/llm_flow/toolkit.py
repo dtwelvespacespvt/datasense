@@ -448,6 +448,8 @@ class ListSQLTablesTool(BaseSQLDatabaseTool, BaseTool):
 
         return table_metadata
 
+    def get_tables(self):
+        return self._run("");
 
 class SQLDatabaseToolkit(BaseToolkit):
     """Toolkit for interacting with SQL databases."""
@@ -466,13 +468,13 @@ class SQLDatabaseToolkit(BaseToolkit):
 
     def get_tools(self, allow_execution: bool = True) -> List[BaseTool]:
         """Get the tools in the toolkit."""
-        list_sql_database_tool = ListSQLTablesTool(db=self.db)
+        # list_sql_database_tool = ListSQLTablesTool(db=self.db)
         info_sql_database_tool_description = (
             "Input to this tool is a comma-separated list of tables, output is the "
             "schema, possible values(if any) and its relationships with other table and sample rows for those tables."
-            "Be sure that the tables actually exist by calling "
-            f"{list_sql_database_tool.name} first!"
-            "Example Input: table1, table2, table3"
+            # "Be sure that the tables actually exist by calling "
+            # f"{list_sql_database_tool.name} first!"
+            # "Example Input: table1, table2, table3"
         )
         info_sql_database_tool = InfoSQLDatabaseTool(db=self.db, description=info_sql_database_tool_description)
         query_sql_database_tool_description = (
@@ -488,7 +490,7 @@ class SQLDatabaseToolkit(BaseToolkit):
         query_sql_database_tool = QuerySQLDataBaseTool(db=self.db, description=query_sql_database_tool_description)
 
         tools = [
-            list_sql_database_tool,
+            # list_sql_database_tool,
             info_sql_database_tool,
         ]
 

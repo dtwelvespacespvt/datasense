@@ -8,7 +8,6 @@ from langchain_core.tracers.langchain import LangChainTracer
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolExecutor
 from langsmith import Client
-from IPython.display import Image, display
 
 from dataline.config import config as dataline_config
 from dataline.models.llm_flow.schema import QueryOptions, ResultType
@@ -17,13 +16,13 @@ from dataline.services.llm_flow.nodes import (
     CallToolNode,
     Condition,
     Node,
-    ShouldCallToolCondition, QueryValidationNode, ShouldCallModelCondition,
+    ShouldCallToolCondition, QueryValidationNode, ShouldCallModelCondition, InjectSchemaNode,
 )
 from dataline.services.llm_flow.prompt import SQL_FUNCTIONS_SUFFIX, SQL_PREFIX
 from dataline.services.llm_flow.toolkit import (
     ChartGeneratorTool,
     QueryGraphState,
-    SQLDatabaseToolkit,
+    SQLDatabaseToolkit, QueryGraphStateUpdate,
 )
 from dataline.services.llm_flow.utils import ConnectionProtocol, DatalineSQLDatabase as SQLDatabase
 from dataline.utils.utils import forward_connection_errors
@@ -107,12 +106,14 @@ class QueryGraphService:
         add_node(graph, CallModelNode)
         add_node(graph, CallToolNode)
         add_node(graph, QueryValidationNode)
+        add_node(graph, InjectSchemaNode)
 
         # Entry point
         graph.set_entry_point(QueryValidationNode.__name__)
 
         # Decision-making logic
         add_conditional_edge(graph, QueryValidationNode, ShouldCallModelCondition)
+        add_edge(graph, InjectSchemaNode, CallModelNode)
         add_conditional_edge(graph, CallModelNode, ShouldCallToolCondition)
         add_edge(graph, CallToolNode, CallModelNode)  # Loop back after tool use
 
