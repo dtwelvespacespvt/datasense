@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import cast
 
-from langchain_core.messages import AIMessage, BaseMessage, ToolCall, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolCall, ToolMessage, SystemMessage
 from langchain_core.utils.function_calling import convert_to_openai_function
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END
@@ -17,7 +17,7 @@ from dataline.services.llm_flow.toolkit import (
     QueryGraphState,
     QueryGraphStateUpdate,
     StateUpdaterTool,
-    state_update,
+    state_update, ListSQLTablesTool
 )
 
 NodeName = str
@@ -180,12 +180,15 @@ class ShouldCallModelCondition(Condition):
     @classmethod
     def run(cls, state: QueryGraphState) -> NodeName:
         if state.query_validation:
-            return CallModelNode.__name__
+            return InjectSchemaNode.__name__
         return END
 
 class QueryValidationNode(Node):
     @classmethod
     def run(cls, state: QueryGraphState) -> QueryGraphStateUpdate:
+
+        if not state.validation_query:
+            return state_update(query_validation=True)
 
         messages = state.messages
         last_message = ""
@@ -202,10 +205,9 @@ class QueryValidationNode(Node):
             streaming=True,
         )
         model = model.with_structured_output(ValidationResponseFormatter)
-        if state.validation_query:
-            validation_prompt = PROMPT_VALIDATION_QUERY + "\n " + "Validation Prompt: " + state.validation_query+ "User Message: " + last_message.content
-        else:
-            return state_update(query_validation=True)
+
+        validation_prompt = PROMPT_VALIDATION_QUERY + "\n " + "Validation Prompt: " + state.validation_query+ "User Message: " + last_message.content
+
         try:
             validation_response: ValidationResponseFormatter = model.invoke(validation_prompt)
         except RateLimitError as e:
@@ -222,5 +224,18 @@ class QueryValidationNode(Node):
             return state_update(messages=[ai_message], query_validation=False)
         return state_update(query_validation= True)
 
+class InjectSchemaNode(Node):
+
+    @classmethod
+    def run(cls, state: QueryGraphState) -> QueryGraphStateUpdate:
+
+        sql_schema = ListSQLTablesTool(db=state.sql_toolkit.db).get_tables()
+
+        sql_schema_tool_message = SystemMessage(content=str(sql_schema) , id=ListSQLTablesTool.__name__)
+
+        if not sql_schema:
+            return state_update()
+
+        return state_update(messages=state.messages + [sql_schema_tool_message])
 
 
