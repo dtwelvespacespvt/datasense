@@ -7,8 +7,10 @@ from uuid import UUID
 from collections import defaultdict
 from fastapi import Depends
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 from openai._exceptions import APIError
-from pydantic import ValidationError
+from pydantic import ValidationError, BaseModel, Field, constr
+
 
 from dataline.config import config
 from dataline.errors import UserFacingError
@@ -33,6 +35,7 @@ from dataline.models.message.schema import (
     QueryOut, MessageFeedBack,
 )
 from dataline.models.result.schema import ResultUpdate
+from dataline.models.user.schema import UserWithKeys
 from dataline.repositories.base import AsyncSession
 from dataline.repositories.conversation import (
     ConversationCreate,
@@ -52,14 +55,19 @@ from dataline.services.llm_flow.llm_calls.mirascope_utils import (
     OpenAIClientOptions,
     call,
 )
+from dataline.services.llm_flow.prompt import PROMPT_MEMORY
 from dataline.services.settings import SettingsService
 from dataline.utils.memory import PersistentChatMemory
 from dataline.utils.slack import slack_push
-from dataline.utils.utils import stream_event_str
+from dataline.utils.utils import stream_event_str, format_transcript
 
 from dataline.auth import AuthManager, get_auth_manager
 
 logger = logging.getLogger(__name__)
+
+class MemorySummaryDecision(BaseModel):
+    summary: str = Field(..., description="Concise summary of the conversation")
+    store_decision: constr(pattern="^(YES|NO)$") = Field(..., description="Whether to store in long-term memory")
 
 
 class ConversationService:
@@ -207,9 +215,10 @@ class ConversationService:
 
         # Build Memory
         try:
-            await self.build_memory(session, connection.id)
+            await self.build_memory(session, connection.id, user_with_model_details)
         except Exception as e:
-            logger.error("Cant Build memory for userId: {} for connection: {} error: {}".format(await self.auth_manager.get_user_id(), connection.id, e))
+            logger.error("Cant Build memory ... for conversation_id: {} error:{}".format(conversation_id, e))
+
         messages: list[BaseMessage] = []
         results: list[ResultType] = []
         # Perform query and execute graph
@@ -224,6 +233,7 @@ class ConversationService:
             long_term_memory = await self.persistent_chat_memory.get_relevant_memories(session, cleaned_query)
         except Exception as e:
             logger.error("Error Getting Memory For user: {} connectionId: {} e: {}".format(await self.auth_manager.get_user_id(), connection.id, e))
+
         async for chunk in (query_graph.query(
             query=cleaned_query,
             options=QueryOptions(
@@ -320,21 +330,19 @@ class ConversationService:
             ),
         )
 
-        background_tasks.add_task(self.save_memory, session, cleaned_query, stored_ai_message.content, results, conversation_id, connection.id)
-
-        await self.save_memory(session, cleaned_query, stored_ai_message.content, results, conversation_id, connection.id)
+        background_tasks.add_task(
+            self.build_memory,
+            session=session,
+            connection_id=connection.id,
+            user_with_model_details=user_with_model_details,
+            new_user_message=cleaned_query,
+            new_ai_message=stored_ai_message.content,
+            new_results=results,
+            conversation_id=conversation_id,
+        )
 
         yield stream_event_str(event=QueryStreamingEventType.STORED_MESSAGES.value, data=query_out.model_dump_json())
 
-    async def save_memory(self, session:AsyncSession, user_message: str, ai_message:str, results:list, conversation_id:UUID, connection_id:UUID):
-
-        for result in results:
-            try:
-                sql_result = SQLQueryStringResult.model_validate(result)
-                ai_message += "\n" + sql_result.sql
-            except ValidationError as e:
-                continue
-        await self.persistent_chat_memory.add_conversation(session, user_message, ai_message, conversation_id, connection_id)
 
     async def get_conversation_history(self, session: AsyncSession, connection_id: UUID, conversation_id: UUID) -> list[BaseMessage]:
         """
@@ -360,31 +368,116 @@ class ConversationService:
 
         return base_messages
 
-    async def build_memory(self, session:AsyncSession, connection_id: UUID):
+    async def _summarize_and_store_transcript(
+        self,
+        session: AsyncSession,
+        transcript: str,
+        user_with_model_details: UserWithKeys,
+        connection_id: UUID,
+        conversation_id: UUID,
+    ):
+        """Helper to summarize a transcript and store it in persistent memory."""
+        try:
+            memory_llm = ChatOpenAI(
+                model="gpt-4.1-nano",
+                temperature=1,
+                api_key=user_with_model_details.openai_api_key,
+            ).with_structured_output(MemorySummaryDecision)
 
-        if await self.persistent_chat_memory.collection_exists(session, connection_id):
+            result: MemorySummaryDecision = await memory_llm.ainvoke(
+                PROMPT_MEMORY.format(conversation=transcript)
+            )
+        except Exception as e:
+            logger.warning(f"Summary generation failed for conversation {conversation_id}: {e}")
             return
 
+        if result.store_decision == "YES":
+            await self.persistent_chat_memory.add_conversation(
+                session=session,
+                result=result.summary,
+                conversation_id=conversation_id,
+                connection_id=connection_id,
+            )
+            logger.info(f"🧠 Stored summarized memory for conversation {conversation_id}")
+        else:
+            logger.info(f"Skipping memory for conversation {conversation_id}")
+
+
+    async def build_memory(
+        self,
+        session: AsyncSession,
+        connection_id: UUID,
+        user_with_model_details: UserWithKeys,
+        new_user_message: str | None = None,
+        new_ai_message: str | None = None,
+        new_results: list | None = None,
+        conversation_id: UUID | None = None,
+    ):
+        """
+        Build or update long-term memory using *summarized* content.
+        """
         user_id = await self.auth_manager.get_user_id()
-        messages = await self.message_repo.get_prev_by_connection_and_user_with_sql_results(session, connection_id, user_id, n=config.default_memory_conversation_depth)
-        logger.info("Building Memory for user {} with messages {}".format(user_id, len(messages)))
-        conversation_doc = defaultdict(list)
-        for message in messages:
-            conversation_doc[message.conversation_id].append(message)
-        for conversation_id, conversations in conversation_doc.items():
-            human_content = ""
-            ai_content = ""
-            for message in conversations:
-                if message.role == BaseMessageType.HUMAN.value:
-                    human_content = ""
-                if message.results:
-                    sqls = [
-                        SQLQueryStringResultContent.model_validate_json(result.content).sql
-                        for result in message.results
-                    ]
-                    ai_content += f"Generated SQL: {', '.join(sqls)} \n"
-            if human_content or ai_content:
-                await self.persistent_chat_memory.add_conversation(session, human_content, ai_content, conversation_id, connection_id)
+
+        try:
+            if await self.persistent_chat_memory.collection_exists(session, connection_id):
+                if new_user_message and new_ai_message:
+                    sqls = []
+                    for r in new_results or []:
+                        try:
+                            sql_result = SQLQueryStringResult.model_validate(r)
+                            sqls.append(sql_result.sql)
+                        except ValidationError:
+                            continue
+
+                    transcript = format_transcript(
+                        user_message=new_user_message,
+                        ai_message=new_ai_message,
+                        sqls=sqls,
+                    )
+
+                    await self._summarize_and_store_transcript(
+                        session=session,
+                        transcript=transcript,
+                        user_with_model_details=user_with_model_details,
+                        connection_id=connection_id,
+                        conversation_id=conversation_id,
+                    )
+                return
+
+            messages = await self.message_repo.get_prev_by_connection_and_user_with_sql_results(
+                session, connection_id, user_id, n=config.default_memory_conversation_depth
+            )
+            logger.info(f"Building initial summarized memory for user {user_id} with {len(messages)} messages")
+
+            conversation_doc = defaultdict(list)
+            for message in messages:
+                conversation_doc[message.conversation_id].append(message)
+
+            for conversation_id, conversations in conversation_doc.items():
+                formatted_messages = []
+                sqls = []
+                for message in conversations:
+                    role = "User" if message.role == BaseMessageType.HUMAN.value else "Assistant"
+                    formatted_messages.append({"role": role, "content": message.content})
+                    if message.results:
+                        sqls.extend([
+                            SQLQueryStringResultContent.model_validate_json(result.content).sql
+                            for result in message.results
+                        ])
+
+                transcript = format_transcript(messages=formatted_messages, sqls=sqls)
+
+                if transcript:
+                    await self._summarize_and_store_transcript(
+                        session=session,
+                        transcript=transcript,
+                        user_with_model_details=user_with_model_details,
+                        connection_id=connection_id,
+                        conversation_id=conversation_id,
+                    )
+
+        except Exception as e:
+            logger.error(f"Error building/updating summarized memory for connection {connection_id}: {e}")
 
 
     async def update_feedback(self, session: AsyncSession, message_feedback: MessageFeedBack) -> None:

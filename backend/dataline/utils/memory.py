@@ -2,7 +2,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi.params import Depends
-from langchain.memory import VectorStoreRetrieverMemory
+from langchain_core.documents import Document
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_postgres import PGVector
 from langchain_openai import OpenAIEmbeddings
@@ -12,6 +12,14 @@ from dataline.auth import AuthManager, get_auth_manager
 from dataline.config import config
 from dataline.services.settings import SettingsService
 from dataline.utils.utils import get_postgresql_dsn_async
+
+from sqlalchemy import delete, MetaData, Table
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.exc import NoSuchTableError
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class PersistentChatMemory:
@@ -39,7 +47,7 @@ class PersistentChatMemory:
                 connection=engine,
                 use_jsonb=True,
                 embeddings=embeddings,
-                collection_name="chat_memory",
+                collection_name="chat_memory_v2",
                 create_extension = False
             )
 
@@ -48,14 +56,13 @@ class PersistentChatMemory:
 
 
 
-    async def add_conversation(self, session, user_msg: str, ai_msg: str, conversation_id:UUID, connection_id:UUID):
+    async def add_conversation(self, session, result: str, conversation_id:UUID, connection_id:UUID):
         """Add conversation with metadata"""
 
         vectorstore = await self._get_vectorstore(session)
 
-        conversation_text = f"User: {user_msg}\nAssistant: {ai_msg}"
         await vectorstore.aadd_texts(
-            texts=[conversation_text],
+            texts=[result],
             metadatas=[{
                 "conversation_id": str(conversation_id),
                 "connection_id": str(connection_id),
@@ -68,17 +75,19 @@ class PersistentChatMemory:
 
         vectorstore = await self._get_vectorstore(session)
 
-        retriever = vectorstore.as_retriever(search_kwargs={"k": k, "filter": {"user_id": str(await self.auth_manager.get_user_id())}})
-
-        memory = VectorStoreRetrieverMemory(
-            retriever=retriever,
-            return_docs=True,
-            input_key="prompt",
+        retriever = vectorstore.as_retriever(
+            search_kwargs={
+                "k": k,
+                "filter": {"user_id": str(await self.auth_manager.get_user_id())}
+            }
         )
 
-        history =  await memory.aload_memory_variables({"prompt": query})
-
-        return "".join(doc.page_content for doc in history.get("history", []))
+        try:
+            docs: list[Document] = await retriever.ainvoke(query)
+            return "\n".join(doc.page_content for doc in docs)
+        except Exception as e:
+            logger.error(f"Error retrieving long-term memory: {e}")
+            return ""
 
 
     async def collection_exists(self, session: AsyncSession, connection_id:UUID) -> bool:
@@ -94,5 +103,21 @@ class PersistentChatMemory:
         """delete past conversation memory"""
 
         vectorstore = await self._get_vectorstore(session)
-        await vectorstore.adelete(where={"conversation_id": str(conversation_id)})
+        if config.vector_db_type == "pgvector":
+            docs = await vectorstore.asimilarity_search(
+                query="",
+                k=1000,  
+                filter={"conversation_id": str(conversation_id)}
+            )
+            
+            logger.info(f"Found {len(docs)} records for conversation_id: {conversation_id}")
+            
+            if docs:
+                doc_ids = [doc.metadata.get("id") for doc in docs if doc.metadata.get("id")]
+                if doc_ids:
+                    await vectorstore.adelete(ids=doc_ids)
+                    logger.info(f"Deleted {len(doc_ids)} records for conversation_id: {conversation_id}")
+        else:
+            await vectorstore.adelete(filter={"conversation_id": str(conversation_id)})
+            logger.info(f"Deleted records for conversation_id: {conversation_id}")
 
