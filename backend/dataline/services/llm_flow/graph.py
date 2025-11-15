@@ -8,7 +8,6 @@ from langchain_core.tracers.langchain import LangChainTracer
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolExecutor
 from langsmith import Client
-from IPython.display import Image, display
 
 from dataline.config import config as dataline_config
 from dataline.models.llm_flow.schema import QueryOptions, ResultType
@@ -19,7 +18,7 @@ from dataline.services.llm_flow.nodes import (
     Node,
     ShouldCallToolCondition, QueryValidationNode, ShouldCallModelCondition,
 )
-from dataline.services.llm_flow.prompt import SQL_FUNCTIONS_SUFFIX, SQL_PREFIX
+from dataline.services.llm_flow.prompt import SQL_PREFIX, LONG_TERM_MEMORY_MESSAGE
 from dataline.services.llm_flow.toolkit import (
     ChartGeneratorTool,
     QueryGraphState,
@@ -119,23 +118,27 @@ class QueryGraphService:
         return graph
 
     def get_prompt_messages(
-        self, query: str, history: Sequence[BaseMessage], top_k: int, suffix: str = SQL_FUNCTIONS_SUFFIX, long_term_memory: str = None
+        self, query: str, history: Sequence[BaseMessage], top_k: int, suffix: str = LONG_TERM_MEMORY_MESSAGE, long_term_memory: str = None
     ):
         local_time = time.localtime()
         formatted_time = time.strftime("%Y-%m-%d %H:%M:%S", local_time)
         prefix = SQL_PREFIX
-        prefix = prefix.format(dialect=self.toolkit.dialect, top_k=top_k, connection_prompt=self.connection.config.connection_prompt if self.connection.config and self.connection.config.connection_prompt else "", current_time =str(formatted_time), context = long_term_memory if long_term_memory else "")
-
+        prefix = prefix.format(dialect=self.toolkit.dialect, top_k=top_k, connection_prompt=self.connection.config.connection_prompt if self.connection.config and self.connection.config.connection_prompt else "", current_time =str(formatted_time))
+        messages = []
         if not history:
-            return [
+            messages = [
                 SystemMessage(content=prefix),
-                HumanMessage(content=query),
-                AIMessage(content=suffix),
+                HumanMessage(content=query)
             ]
         else:
-            return [
+            messages = [
                 SystemMessage(content=prefix),
                 *history,
-                HumanMessage(content=query),
-                AIMessage(content=suffix),
+                HumanMessage(content=query)
             ]
+
+        if long_term_memory:
+            messages.append(SystemMessage(content=suffix.format(long_term_memory=long_term_memory)))
+
+        return messages
+

@@ -118,3 +118,31 @@ def forward_connection_errors(error: Exception) -> None:
             )
     if isinstance(error, NoSuchModuleError):
         raise UserFacingError(f"Your version of DataLine does not support this database yet - {str(error)}")
+
+
+def format_transcript(
+        messages: list[dict[str, str]] | None = None,
+    user_message: str | None = None,
+    ai_message: str | None = None,
+    sqls: list[str] | None = None,
+) -> str:
+    """
+    Format a transcript string consistently for summarization.
+    """
+    transcript = ""
+
+    if messages:
+        for m in messages:
+            role = m.get("role", "").capitalize()
+            content = (m.get("content") or "").strip()
+            if content:
+                transcript += f"{role}: {content}\n"
+
+    if user_message and ai_message:
+        transcript += f"User: {user_message.strip()}\nAssistant: {ai_message.strip()}\n"
+
+    if sqls:
+        transcript += f"Generated SQL: {', '.join(sqls)}\n"
+
+    return transcript.strip()
+
