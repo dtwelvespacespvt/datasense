@@ -1,3 +1,5 @@
+import datetime
+from datetime import timezone
 from typing import Annotated
 from uuid import UUID
 
@@ -13,9 +15,6 @@ from dataline.config import config
 from dataline.services.settings import SettingsService
 from dataline.utils.utils import get_postgresql_dsn_async
 
-from sqlalchemy import delete, MetaData, Table
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.exc import NoSuchTableError
 
 import logging
 
@@ -67,28 +66,43 @@ class PersistentChatMemory:
                 "conversation_id": str(conversation_id),
                 "connection_id": str(connection_id),
                 "user_id" : str(await self.auth_manager.get_user_id()),
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }]
         )
 
-    async def get_relevant_memories(self, session: AsyncSession, query: str, k: int = 2):
-        """Retrieve relevant past conversations"""
-
+    async def get_relevant_memories(self, session: AsyncSession, query: str, k: int = 5):
+        """Retrieve relevant past conversations, reweighted by recency."""
         vectorstore = await self._get_vectorstore(session)
-
         retriever = vectorstore.as_retriever(
             search_kwargs={
-                "k": k,
-                "filter": {"user_id": str(await self.auth_manager.get_user_id())}
+                "k": k * 2,
+                "filter": {"user_id": str(await self.auth_manager.get_user_id())},
             }
         )
 
         try:
             docs: list[Document] = await retriever.ainvoke(query)
+            def hybrid_score(doc: Document):
+                sim = doc.metadata.get("score", 1.0)
+                ts = doc.metadata.get("created_at")
+                recency = 0.0
+                if ts:
+                    try:
+                        dt = datetime.fromisoformat(ts)
+                        age_days = (datetime.now(timezone.utc) - dt).days
+                        recency = max(0.0, 1.0 - (age_days / 30))
+                    except Exception:
+                        pass
+                return (0.8 * sim) + (0.2 * recency)
+
+            docs = sorted(docs, key=hybrid_score, reverse=True)
+            docs = docs[:k]
+
             return "\n".join(doc.page_content for doc in docs)
+
         except Exception as e:
             logger.error(f"Error retrieving long-term memory: {e}")
             return ""
-
 
     async def collection_exists(self, session: AsyncSession, connection_id:UUID) -> bool:
 

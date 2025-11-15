@@ -398,7 +398,7 @@ class ConversationService:
                 conversation_id=conversation_id,
                 connection_id=connection_id,
             )
-            logger.info(f"🧠 Stored summarized memory for conversation {conversation_id}")
+            logger.info(f"Stored summarized memory for conversation {conversation_id}")
         else:
             logger.info(f"Skipping memory for conversation {conversation_id}")
 
