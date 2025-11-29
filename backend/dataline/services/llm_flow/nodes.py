@@ -7,7 +7,6 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END
 from openai import AuthenticationError, RateLimitError
 from pydantic import BaseModel, Field
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 
 from dataline.errors import UserFacingError
