@@ -11,7 +11,7 @@ import Chart from "../Library/Chart";
 import { useQueryClient } from "@tanstack/react-query";
 import { getMessagesQuery } from "@/hooks";
 import { useParams } from "@tanstack/react-router";
-import { ChevronDownIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
+import { ChevronRightIcon } from "@heroicons/react/24/outline";
 
 function classNames(...classes: string[]) {
   return classes.filter(Boolean).join(" ");
