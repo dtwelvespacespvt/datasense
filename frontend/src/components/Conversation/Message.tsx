@@ -100,6 +100,10 @@ export const Message = ({
 
   const handleThumbClick = (isPositive: boolean) => {
     // store the chosen feedback rating
+    if (showFeedbackInput) {
+      setShowFeedbackInput(false);
+      return;
+    }
     setFeedback({ ...feedback, isPositive });
     setShowFeedbackInput(true);
   };
@@ -130,7 +134,7 @@ export const Message = ({
                           <Spinner />
                         </div>
                       )}
-                      <p className="leading-loose w-full break-all">{parseMessageContent(message.message.content)}</p>
+                      <p className="leading-loose w-full break-words">{parseMessageContent(message.message.content)}</p>
                     </div>
                   </div>
                 </div>
@@ -145,18 +149,16 @@ export const Message = ({
                     if (message.message.is_positive == null || message.message.is_positive === false)
                       handleThumbClick(true);
                   }}
-                  className={`cursor-pointer mx-5 w-5 h-5 ${
-                    message.message.is_positive === true ? "text-green-400" : "text-gray-400 hover:text-green-400"
-                  }`}
+                  className={`cursor-pointer mx-5 w-5 h-5 ${message.message.is_positive === true ? "text-green-400" : "text-gray-400 hover:text-green-400"
+                    }`}
                 />
                 <HandThumbDownIcon
                   onClick={() => {
                     if (message.message.is_positive == null || message.message.is_positive === true)
                       handleThumbClick(false);
                   }}
-                  className={`cursor-pointer w-5 h-5 ${
-                    message.message.is_positive === false ? "text-red-400" : "text-gray-400 hover:text-red-400"
-                  }`}
+                  className={`cursor-pointer w-5 h-5 ${message.message.is_positive === false ? "text-red-400" : "text-gray-400 hover:text-red-400"
+                    }`}
                 />
               </div>
             ) : null}

@@ -95,6 +95,7 @@ export const CodeBlock = ({
   onSaveSQLStringResult,
   forChart = false,
   minimize,
+  onSQLChange,
 }: {
   code: string;
   resultId: string;
@@ -105,6 +106,7 @@ export const CodeBlock = ({
   ) => void;
   forChart: boolean;
   minimize?: boolean;
+  onSQLChange?: (newCode: string) => void;
 }) => {
   const [savedCode, setSavedCode] = useState<string>(() =>
     formattedCodeOrInitial(code, dialect as SupportedFormatters)
@@ -217,6 +219,7 @@ export const CodeBlock = ({
   const handleTextUpdate = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     // If the user is typing a space, don't update and reformat the saved code
     setSavedCode(e.target.value);
+    onSQLChange?.(e.target.value);
   };
 
   const handleKeyboardInput = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -227,15 +230,20 @@ export const CodeBlock = ({
       e.preventDefault();
       const { selectionStart, selectionEnd } = e.currentTarget;
       // Modify current textarea value by adding 2 spaces at the cursor position
-      e.currentTarget.value =
+      const newValue =
         e.currentTarget.value.substring(0, selectionStart) +
         "  " +
         e.currentTarget.value.substring(selectionEnd);
+      e.currentTarget.value = newValue;
       e.currentTarget.selectionStart = selectionStart + 2;
       e.currentTarget.selectionEnd = selectionEnd + 2;
+
+      setSavedCode(newValue);
+      onSQLChange?.(newValue);
       // Handle non-letter keys
     } else {
       setSavedCode(textareaRef.current?.value || "");
+      onSQLChange?.(textareaRef.current?.value || "");
     }
   };
 
@@ -294,20 +302,9 @@ export const CodeBlock = ({
         />
 
         {/* Top right corner icons */}
-        <div className="absolute top-0 right-0 m-2 flex gap-1">
-          {/* Help Icon */}
-          {forChart && (
-            <CustomTooltip hoverText="Help">
-              <button
-                tabIndex={-1}
-                onClick={openSQLForChartHelp}
-                className="p-1"
-              >
-                <QuestionMarkCircleIcon className="w-6 h-6 [&>path]:stroke-[2] group-hover:-rotate-12" />
-              </button>
-            </CustomTooltip>
-          )}
-        </div>
+        {/* <div className="absolute top-0 right-0 m-2 flex gap-1">
+
+        </div> */}
 
         <div className="absolute bottom-0 right-0 m-2 flex gap-1">
           {/* Minimize Icon */}
@@ -371,6 +368,18 @@ export const CodeBlock = ({
               />
             </button>
           </CustomTooltip>
+
+          {forChart && (
+            <CustomTooltip hoverText="Help">
+              <button
+                tabIndex={-1}
+                onClick={openSQLForChartHelp}
+                className="p-1"
+              >
+                <QuestionMarkCircleIcon className="w-6 h-6 [&>path]:stroke-[2] group-hover:-rotate-12" />
+              </button>
+            </CustomTooltip>
+          )}
         </div>
 
         {/* Help for editing queries when codeblock is linked to a chart */}

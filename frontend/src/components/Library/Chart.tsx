@@ -308,9 +308,9 @@ const Chart = ({
             >
               {
                 fullscreenToggle ? (
-                  <ArrowsPointingInIcon className="w-6 h-6 [&>path]:stroke-[2] group-hover:-rotate-6" />
-                ) : (
                   <ArrowsPointingOutIcon className="w-6 h-6 [&>path]:stroke-[2] group-hover:-rotate-6" />
+                ) : (
+                  <ArrowsPointingInIcon className="w-6 h-6 [&>path]:stroke-[2] group-hover:-rotate-6" />
                 )
               }
             </button>

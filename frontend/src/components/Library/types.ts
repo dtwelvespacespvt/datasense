@@ -22,7 +22,8 @@ export type IResultTypeName =
   | "SQL_QUERY_STRING_RESULT"
   | "SQL_QUERY_RUN_RESULT"
   | "SELECTED_TABLES"
-  | "CHART_GENERATION_RESULT";
+  | "CHART_GENERATION_RESULT"
+  | "TOOL_REASON";
 
 export type DatabaseFileType = "sqlite" | "csv" | "sas7bdat" | "excel";
 
@@ -40,6 +41,15 @@ export interface ISelectedTablesResult extends IResult {
   linked_id: string;
   content: {
     tables: string[];
+  };
+}
+
+export interface IToolReasonResult extends IResult {
+  type: "TOOL_REASON";
+  result_id: string;
+  linked_id: string;
+  content: {
+    reason: string;
   };
 }
 
@@ -97,7 +107,8 @@ export type IResultType =
   | ISQLQueryRunResult
   | ISQLQueryStringResult
   | ISelectedTablesResult
-  | IChartGenerationResult;
+  | IChartGenerationResult
+  | IToolReasonResult;
 export interface IMessageWithResultsOut {
   message: IMessageOut;
   results?: IResultType[];

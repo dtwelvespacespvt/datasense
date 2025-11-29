@@ -49,6 +49,11 @@ You can just talk about the results instead.
 
 If the question does not seem related to the database, just return "I don't know" as the answer.
 
+IMPORTANT: Before using any tool, you must explicitly explain your plan and reasoning in plain text with tool call.
+1. Analyze the user's request.
+2. Explain which table or tool you will check and why.
+3. THEN call the tool.
+
 {connection_prompt}
 
 Current Time {current_time}
@@ -57,8 +62,6 @@ Current Time {current_time}
 Retrieved Context from Memory:
 {context}
 ---
-
-
 """
 
 SQL_SUFFIX = """Begin!

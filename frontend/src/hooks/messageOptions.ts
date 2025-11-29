@@ -11,12 +11,34 @@ export interface IStorageMessageOptions {
   [connection_id: string]: IMessageOptions;
 }
 
+const MIGRATION_KEY_V1 = "message_options_migration_v1";
+
 function readMessageOptionsFromLocalStorage(
   connection_id: string | undefined
 ): IMessageOptions {
   if (connection_id == null) {
     return DEFAULT_OPTIONS;
   }
+
+  const hasMigrated = localStorage.getItem(MIGRATION_KEY_V1);
+  if (!hasMigrated) {
+    const allMessageOptions = JSON.parse(
+      localStorage.getItem("message_options") ?? "{}"
+    ) as IStorageMessageOptions;
+
+    Object.keys(allMessageOptions).forEach((key) => {
+      if (allMessageOptions[key]) {
+        allMessageOptions[key].secure_data = false;
+      }
+    });
+    localStorage.setItem("message_options", JSON.stringify(allMessageOptions));
+    localStorage.setItem(MIGRATION_KEY_V1, "true");
+
+    if (connection_id in allMessageOptions) {
+      return allMessageOptions[connection_id];
+    }
+  }
+
   const allMessageOptions = JSON.parse(
     localStorage.getItem("message_options") ?? "{}"
   ) as IStorageMessageOptions;

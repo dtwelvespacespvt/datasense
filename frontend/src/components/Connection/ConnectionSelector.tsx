@@ -1,8 +1,8 @@
 import ConnectionImage from "./DatabaseDialectImage";
-import { useState } from "react";
-import { IConnection, IConversation } from "../Library/types";
+import { useEffect, useState, useRef } from "react";
+import { IConnection, IConversation, IConversationWithMessagesWithResultsOut } from "../Library/types";
 import { Cog6ToothIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
-import { useCreateConversation, useGetConnections, useGetUserProfile } from "@/hooks";
+import { useCreateConversation, useGetConnections, useGetUserProfile, useGetConversations } from "@/hooks";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Button } from "../Catalyst/button";
 
@@ -15,11 +15,12 @@ export const ConnectionSelector = () => {
   const [, setConversation] = useState<IConversation | null>();
   const { data, isFetching: isRefreshing, refetch } = useGetConnections();
   const { data: userProfile } = useGetUserProfile();
+  const { data: conversationsData } = useGetConversations();
+  const autoNavigatedRef = useRef(false);
 
   const createConnection = () => {
     navigate({ to: "/connection/new" });
   };
-
   const { mutate } = useCreateConversation({
     onSuccess(resp) {
       setConversation({
@@ -33,7 +34,38 @@ export const ConnectionSelector = () => {
     },
   });
 
+  useEffect(() => {
+    if (autoNavigatedRef.current) return;
+    const connections = data?.connections;
+    if (!connections || !Array.isArray(connections)) return;
+    if (!userProfile) return;
+    if (connections.length === 1 && userProfile?.role !== "ADMIN") {
+      const id = connections[0]?.id;
+      if (!id) return;
+
+      // Find the top-most conversation returned by the backend for this connection
+      const latest = conversationsData?.find(
+        (c: IConversationWithMessagesWithResultsOut) => c.connection_id === id
+      );
+      if (latest?.id) {
+        autoNavigatedRef.current = true;
+        navigate({ to: "/chat/$conversationId", params: { conversationId: latest.id } });
+        return;
+      }
+      autoNavigatedRef.current = true;
+      mutate({ id, name: "Untitled chat" });
+    }
+  }, [data?.connections, userProfile, navigate, mutate, conversationsData]);
+
+
   function selectConnection(connection: IConnection) {
+    const latest = conversationsData?.find(
+      (c: IConversationWithMessagesWithResultsOut) => c.connection_id === connection.id
+    );
+    if (latest?.id) {
+      navigate({ to: "/chat/$conversationId", params: { conversationId: latest.id } });
+      return;
+    }
     mutate({ id: connection.id, name: "Untitled chat" });
   }
 

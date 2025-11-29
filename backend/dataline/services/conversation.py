@@ -102,7 +102,7 @@ class ConversationService:
 
         try:
             title_generator_response = call(
-                "gpt-4o-mini",
+                "gpt-4.1-nano",
                 response_model=ConversationTitleGeneratorResponse,
                 prompt_fn=conversation_title_generator_prompt,
                 client_options=OpenAIClientOptions(api_key=api_key, base_url=base_url),

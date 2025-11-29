@@ -23,6 +23,7 @@ import {
   useGetConnections,
   useGetConversationsInfinite,
   useUpdateConversation,
+  useCreateConversation,
 } from "@/hooks";
 import {
   IConversation,
@@ -117,6 +118,21 @@ export const Sidebar = () => {
       });
     },
   });
+
+  const { mutate: createConversation } = useCreateConversation({
+    onSuccess(resp) {
+      navigate({ to: "/chat/$conversationId", params: { conversationId: resp.data.id } });
+    },
+  });
+
+  const handleNewChat = () => {
+    const conns = connectionsData?.connections || [];
+    if (conns.length > 1) {
+      navigate({ to: "/" });
+      return;
+    }
+    createConversation({ id: conns[0]?.id ?? "", name: "Untitled chat" });
+  };
 
   const handleEditClick = (e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -238,13 +254,13 @@ export const Sidebar = () => {
                           onScroll={handleMobileScroll}
                           ref={mobileConversationListRef}
                         >
-                          <Link
-                            to="/"
+                          <button
+                            onClick={handleNewChat}
                             className="py-3 px-2 rounded-md flex justify-start items-center border border-gray-600 text-gray-200 hover:bg-gray-800 transition-all duration-150 cursor-pointer"
                           >
                             <PlusIcon className="h-5 w-5 shrink-0 mr-2 [&>path]:stroke-[1]"></PlusIcon>
                             <div>New chat</div>
-                          </Link>
+                          </button>
                           {conversations.map((conversation) => (
                             <li key={conversation.id}>
                               <Link
@@ -322,13 +338,13 @@ export const Sidebar = () => {
           <img className="h-8 w-auto" src={logo} alt="DataSense" />
         </Link>
         {/* New chat button */}
-        <Link
-          to="/"
+        <button
+          onClick={handleNewChat}
           className="mt-9 mb-4 mx-2 py-3 px-2 rounded-md flex justify-start items-center border border-gray-600 text-gray-200 hover:bg-gray-800 transition-all duration-150 cursor-pointer"
         >
           <PlusIcon className="h-5 w-5 shrink-0 mr-2 [&>path]:stroke-[1]"></PlusIcon>
           <div>New chat</div>
-        </Link>
+        </button>
         {/* Chat list, flex-1 to take as much space as possible */}
         <nav className="flex flex-1 flex-col gap-y-4 mx-2 overflow-auto">
           <div 

@@ -1,4 +1,5 @@
 import abc
+from abc import ABC
 from datetime import datetime
 from typing import Any, ClassVar, List, Self
 from uuid import UUID, uuid4
@@ -241,5 +242,36 @@ class SelectedTablesResult(QueryResultSchema, StorableResultMixin, RenderableRes
             linked_id=self.linked_id,
         )
 
+class ToolReason(QueryResultSchema, RenderableResultMixin, StorableResultMixin):
+    result_type: ClassVar[QueryResultType] = QueryResultType.TOOL_REASON
+    linked_id: UUID | None = None
+    reason: str
 
-ResultType = SQLQueryRunResult | SQLQueryStringResult | SelectedTablesResult | ChartGenerationResult
+    async def store_result(
+            self, session: AsyncSession, result_repo: ResultRepository, message_id: UUID, linked_id: UUID | None = None
+    ) -> ResultModel:
+        create = ResultCreate(
+            content=self.reason,
+            type=self.result_type.value,
+            message_id=message_id,
+            linked_id=linked_id,
+        )
+        stored_result = await result_repo.create(session, create)
+        self.result_id = stored_result.id
+        return stored_result
+
+    def serialize_result(self) -> ResultOut:
+        return ResultOut(
+            content=self.model_dump(exclude={"result_id", "ephemeral_id", "linked_id"}),
+            type=self.result_type.value,
+            created_at=datetime.now(),
+            linked_id=self.linked_id,
+        )
+
+    @classmethod
+    def deserialize(cls, result: ResultModel) -> Self:
+        return cls(reason=result.content, result_id=result.id, linked_id=result.linked_id)
+
+
+
+ResultType = SQLQueryRunResult | SQLQueryStringResult | SelectedTablesResult | ChartGenerationResult | ToolReason

@@ -239,9 +239,9 @@ export type ListConversations = ApiResponse<
   types.IConversationWithMessagesWithResultsOut[]
 >;
 const listConversations = async (params?: { skip?: number; limit?: number }): Promise<ListConversations> => {
-  return (await backendApi<ListConversations>({ 
+  return (await backendApi<ListConversations>({
     url: "/conversations",
-    params 
+    params
   })).data;
 };
 
@@ -269,7 +269,7 @@ const createMessage = async (conversationId: number, content: string) => {
   return response.data;
 };
 
-export const DEFAULT_OPTIONS = { secure_data: true, debug: false };
+export const DEFAULT_OPTIONS = { secure_data: false, debug: false };
 
 export type QueryOut = ApiResponse<{
   human_message: types.IMessageOut;
@@ -284,7 +284,7 @@ const query = async (
   return (
     await backendApi<QueryOut>({
       url: `/conversation/${conversationId}/query`,
-      params: {execute },
+      params: { execute },
       data: { message_options, query },
       method: "POST",
     })
@@ -549,7 +549,7 @@ const submitFeedback = async (feedback: types.MessageFeedbackUpdate): Promise<Su
   return (await backendApi<SubmitFeedback>({
     url: "/conversation/message/feedback",
     method: "patch",
-    data: feedback ,
+    data: feedback,
   })).data;
 }
 
