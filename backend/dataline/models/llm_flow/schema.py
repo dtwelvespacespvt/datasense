@@ -275,3 +275,8 @@ class ToolReason(QueryResultSchema, RenderableResultMixin, StorableResultMixin):
 
 
 ResultType = SQLQueryRunResult | SQLQueryStringResult | SelectedTablesResult | ChartGenerationResult | ToolReason
+
+
+class MemoryAnalysisResponse(BaseModel):
+    should_save: bool = Field(description="Whether the interaction contains valuable information worth saving.")
+    memory_content: str | None = Field(description="The refined content to save if should_save is True. Should be a concise rule or definition.")

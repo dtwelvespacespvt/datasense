@@ -122,7 +122,12 @@ class QueryGraphService:
         local_time = time.localtime()
         formatted_time = time.strftime("%Y-%m-%d %H:%M:%S", local_time)
         prefix = SQL_PREFIX
-        prefix = prefix.format(dialect=self.toolkit.dialect, top_k=top_k, connection_prompt=self.connection.config.connection_prompt if self.connection.config and self.connection.config.connection_prompt else "", current_time =str(formatted_time), context = long_term_memory if long_term_memory else "")
+        
+        context_str = ""
+        if long_term_memory:
+            context_str = f"###Long Term memory retrieved for the query \n{long_term_memory}\n"
+
+        prefix = prefix.format(dialect=self.toolkit.dialect, top_k=top_k, connection_prompt=self.connection.config.connection_prompt if self.connection.config and self.connection.config.connection_prompt else "", current_time =str(formatted_time), context = context_str)
 
         if not history:
             return [

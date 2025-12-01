@@ -55,6 +55,7 @@ export const Message = ({
     text: "",
   });
   const [showFeedbackInput, setShowFeedbackInput] = React.useState(false);
+  messageOptions;
 
   const parseMessageContent = (text: string) => {
     const parts: React.ReactNode[] = [];
@@ -124,7 +125,7 @@ export const Message = ({
               <MessageIcon message={message} />
             </div>
             <div className="flex flex-col gap-2 md:gap-6 min-w-0 flex-1">
-              <MessageResultRenderer initialResults={message.results || []} messageId={message.message.id || ""} messageOptions={messageOptions} />
+              <MessageResultRenderer initialResults={message.results || []} messageId={message.message.id || ""} />
               {message.message.content && (
                 <div className="min-h-[20px] flex whitespace-pre-wrap break-words">
                   <div className="markdown prose w-full break-words dark:prose-invert dark">

@@ -13,7 +13,6 @@ import {
   ArrowsPointingOutIcon,
   MinusIcon,
   ArrowDownTrayIcon,
-  Square3Stack3DIcon,
   TableCellsIcon,
 } from "@heroicons/react/24/outline";
 import Minimizer from "../Minimizer/Minimizer";

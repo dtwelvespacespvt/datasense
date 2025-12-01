@@ -58,10 +58,7 @@ IMPORTANT: Before using any tool, you must explicitly explain your plan and reas
 
 Current Time {current_time}
 
----
-Retrieved Context from Memory:
 {context}
----
 """
 
 SQL_SUFFIX = """Begin!
@@ -100,3 +97,35 @@ and point out whats missing
  
 """
 )
+
+
+def memory_analysis_prompt(user_query: str, ai_response: str, conversation_history: str) -> str:
+    return f"""
+    You are a Memory Manager for an AI Data Analyst. Your goal is to decide if the current interaction contains valuable information that should be saved to long-term memory to help with FUTURE queries.
+
+    We ONLY want to save memory if:
+    1. The user explicitly DEFINES a term, metric, or business rule (e.g., "High value means > $1k", "Use the 'clean_sales' table").
+    2. The user CORRECTS the agent's logic or SQL (e.g., "No, exclude cancelled orders").
+    3. The query involves COMPLEX or NON-OBVIOUS logic that isn't clear from the database schema alone.
+
+    We do NOT want to save:
+    1. Simple data retrieval queries (e.g., "Show me users", "List top 10 products").
+    2. Questions that are fully self-contained and don't establish a reusable rule.
+    3. Chit-chat or greetings.
+
+    If you decide to save, draft a concise "Memory Rule" that captures the logic/definition without the conversational fluff.
+
+    Interaction to Analyze:
+    -----------------------
+    Context (History):
+    {conversation_history}
+
+    Current User Query:
+    {user_query}
+
+    Current AI Response (including SQL):
+    {ai_response}
+    -----------------------
+
+    Analyze this. Set 'should_save' to True only if it meets the criteria. If True, provide the 'memory_content'.
+    """

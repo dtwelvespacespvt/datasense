@@ -1,6 +1,5 @@
 import {
   IResultType,
-  IMessageOptions,
   ISQLQueryStringResult,
   ISelectedTablesResult,
 } from "@components/Library/types";
@@ -162,11 +161,9 @@ function getResultGroups(results: IResultType[]) {
 export const MessageResultRenderer = ({
   initialResults,
   messageId,
-  messageOptions,
 }: {
   initialResults: IResultType[];
   messageId: string;
-  messageOptions?: IMessageOptions;
 }) => {
   const [results, setResults] = useState(initialResults);
   const { groups: resultGroups, unlinkedGroup } = useMemo(

@@ -207,16 +207,16 @@ class QueryValidationNode(Node):
                 last_message = message
                 break
 
-        model = ChatOpenAI(
-            model=state.options.llm_model,
-            base_url=state.options.openai_base_url,
-            api_key=state.options.openai_api_key,
-            temperature=1 if state.options.llm_model.startswith("gpt-5") else 0.2,
-            streaming=True,
-        )
-
-        model = model.with_structured_output(ValidationResponseFormatter)
         if state.validation_query:
+            model = ChatOpenAI(
+                model=state.options.llm_model,
+                base_url=state.options.openai_base_url,
+                api_key=state.options.openai_api_key,
+                temperature=1 if state.options.llm_model.startswith("gpt-5") else 0.2,
+                streaming=True,
+            )
+            model = model.with_structured_output(ValidationResponseFormatter)
+
             validation_prompt = PROMPT_VALIDATION_QUERY + "\n " + "Validation Prompt: " + state.validation_query+ "User Message: " + last_message.content
         else:
             return state_update(query_validation=True)

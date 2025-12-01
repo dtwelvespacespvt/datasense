@@ -59,13 +59,6 @@ export const ConnectionSelector = () => {
 
 
   function selectConnection(connection: IConnection) {
-    const latest = conversationsData?.find(
-      (c: IConversationWithMessagesWithResultsOut) => c.connection_id === connection.id
-    );
-    if (latest?.id) {
-      navigate({ to: "/chat/$conversationId", params: { conversationId: latest.id } });
-      return;
-    }
     mutate({ id: connection.id, name: "Untitled chat" });
   }
 
@@ -133,40 +126,40 @@ export const ConnectionSelector = () => {
                 </div>
               </div>
             ))}
-              {userProfile?.role === "ADMIN" ?
-            <div
-              className="hover:cursor-pointer md:hover:ring-2 ring-gray-600 border px-2 py-2 border-gray-700 aspect-square overflow-hidden rounded-lg flex flex-col justify-between hover:bg-gray-700 transition-all duration-75 w-full sm:w-auto sm:max-w-xs"
-              onClick={createConnection}
-            >
-              {/* Item to add new connection */}
-              <div className="flex overflow-hidden w-full justify-center items-center sm:mt-4">
-                <svg
-                  className="h-full w-full text-gray-200"
-                  stroke="currentColor"
-                  fill="none"
-                  viewBox="0 0 48 48"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8 14v20c0 4.418 7.163 8 16 8 1.381 0 2.721-.087 4-.252M8 14c0 4.418 7.163 8 16 8s16-3.582 16-8M8 14c0-4.418 7.163-8 16-8s16 3.582 16 8m0 0v14m0-4c0 4.418-7.163 8-16 8S8 28.418 8 24m32 10v6m0 0v6m0-6h6m-6 0h-6"
-                  />
-                </svg>
-              </div>
-              <div className="w-full flex justify-center items-center gap-2 text-gray-50  sm:-mt-2 ">
-                <div className="h-full lg:h-fit flex flex-col justify-center md:items-start w-full">
-                  <div className="text-xs md:text-sm xxl:text-md font-normal text-gray-400">
-                    Add
-                  </div>
-                  <div className="text-base leading-tight xxl:text-xl font-normal">
-                    New Connection
+            {userProfile?.role === "ADMIN" ?
+              <div
+                className="hover:cursor-pointer md:hover:ring-2 ring-gray-600 border px-2 py-2 border-gray-700 aspect-square overflow-hidden rounded-lg flex flex-col justify-between hover:bg-gray-700 transition-all duration-75 w-full sm:w-auto sm:max-w-xs"
+                onClick={createConnection}
+              >
+                {/* Item to add new connection */}
+                <div className="flex overflow-hidden w-full justify-center items-center sm:mt-4">
+                  <svg
+                    className="h-full w-full text-gray-200"
+                    stroke="currentColor"
+                    fill="none"
+                    viewBox="0 0 48 48"
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8 14v20c0 4.418 7.163 8 16 8 1.381 0 2.721-.087 4-.252M8 14c0 4.418 7.163 8 16 8s16-3.582 16-8M8 14c0-4.418 7.163-8 16-8s16 3.582 16 8m0 0v14m0-4c0 4.418-7.163 8-16 8S8 28.418 8 24m32 10v6m0 0v6m0-6h6m-6 0h-6"
+                    />
+                  </svg>
+                </div>
+                <div className="w-full flex justify-center items-center gap-2 text-gray-50  sm:-mt-2 ">
+                  <div className="h-full lg:h-fit flex flex-col justify-center md:items-start w-full">
+                    <div className="text-xs md:text-sm xxl:text-md font-normal text-gray-400">
+                      Add
+                    </div>
+                    <div className="text-base leading-tight xxl:text-xl font-normal">
+                      New Connection
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-            :null}
+              : null}
           </div>
         </div>
       </div>
