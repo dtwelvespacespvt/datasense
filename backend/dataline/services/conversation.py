@@ -1,14 +1,16 @@
 import asyncio
 import logging
 import re
+import time
 from typing import AsyncGenerator, cast, Dict, Annotated
 from uuid import UUID
 
 from collections import defaultdict
 from fastapi import Depends
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 from openai._exceptions import APIError
-from pydantic import ValidationError
+from rapidfuzz import fuzz
 
 from dataline.config import config
 from dataline.errors import UserFacingError
@@ -48,10 +50,13 @@ from dataline.services.llm_flow.llm_calls.conversation_title_generator import (
     ConversationTitleGeneratorResponse,
     conversation_title_generator_prompt,
 )
+from dataline.models.llm_flow.schema import (
+    MemoryAnalysisResponse,
+)
 from dataline.services.llm_flow.llm_calls.mirascope_utils import (
     OpenAIClientOptions,
-    call,
-)
+    call)
+from dataline.services.llm_flow.prompt import memory_analysis_prompt
 from dataline.services.settings import SettingsService
 from dataline.utils.memory import PersistentChatMemory
 from dataline.utils.slack import slack_push
@@ -102,7 +107,7 @@ class ConversationService:
 
         try:
             title_generator_response = call(
-                "gpt-4o-mini",
+                "gpt-4.1-nano",
                 response_model=ConversationTitleGeneratorResponse,
                 prompt_fn=conversation_title_generator_prompt,
                 client_options=OpenAIClientOptions(api_key=api_key, base_url=base_url),
@@ -143,7 +148,7 @@ class ConversationService:
 
     async def delete_conversation(self, session: AsyncSession, conversation_id: UUID) -> None:
         try:
-            await self.persistent_chat_memory.delete_conversation_memory(session, conversation_id)
+            await self.persistent_chat_memory.delete_document(session, collection_id=config.vector_db_collection_memory, filter_query={"conversation_id": str(conversation_id)})
         except Exception as e:
             logger.error("Error while deleting memory for conversation_id: {} error:{}".format(conversation_id, e))
         await self.conversation_repo.delete_by_uuid(session, record_id=conversation_id)
@@ -158,20 +163,41 @@ class ConversationService:
 
     @classmethod
     def _add_glossary_util(cls, glossary:Dict[str,str], query:str, history:list[BaseMessage])->str:
-        pattern = f"<(.+?)>"
-        glossary_words =  re.findall(pattern, query)
+        query += "\n\n#####Glossary-Terms#######\n"
+        query_with_history = query
         for message in history:
-            if message.type == BaseMessageType.HUMAN.value and message.content:
-                glossary_words.extend(re.findall(pattern, message.content))
-        if not glossary_words:
-            return query
-        glossary_words = set(glossary_words)
-        query += "\n\n#####Glossary#######\n"
-        for glossary_word in glossary_words:
-            if glossary_word in glossary:
-                query += glossary_word +": "+glossary.get(glossary_word)+"\n"
+            if message.type == BaseMessageType.HUMAN.value:
+                query_with_history += message.content
+
+        for key, value in glossary.items():
+            score = fuzz.partial_ratio(query_with_history.lower(), key.lower())
+            if score > 80:
+                query+="{}: {}\n".format(key, value)
+
         return query
 
+    async def _add_glossary_util_semantic(self, session, query:str, connection_id:UUID):
+        retrieved_glossary = await self.persistent_chat_memory.retrieve_document(session, query, collection_id=config.vector_db_collection_glossary ,filter_query={"connection_id": str(connection_id)}, k=4)
+        if retrieved_glossary:
+             glossary_content = "\n".join([doc.page_content for doc in retrieved_glossary])
+             query += "\n\n#####Glossary#######\n {}".format(glossary_content)
+        return query
+
+
+    async def _retrieve_memory_safe(self, session, query:str, connection_id:UUID):
+        try:
+            return await self.persistent_chat_memory.retrieve_document(
+                session, 
+                query=query, 
+                collection_id=config.vector_db_collection_memory, 
+                filter_query={"connection_id": str(connection_id)},
+                k=2
+            )
+        except Exception as e:
+            logger.error("Error Getting Memory For user: {} connectionId: {} e: {}".format(await self.auth_manager.get_user_id(), connection_id, e))
+            return None
+
+     
     @classmethod
     def _add_reverse_look_up_util(cls, unique_value_dict: Dict[str,list[tuple[str,str]]], query:str):
 
@@ -206,24 +232,29 @@ class ConversationService:
         history = await self.get_conversation_history(session, conversation.connection_id, conversation.id)
 
         # Build Memory
-        try:
-            await self.build_memory(session, connection.id)
-        except Exception as e:
-            logger.error("Cant Build memory for userId: {} for connection: {} error: {}".format(await self.auth_manager.get_user_id(), connection.id, e))
+        # try:
+        #     await self.build_memory(session, connection.id)
+        # except Exception as e:
+        #     logger.error("Cant Build memory for userId: {} for connection: {} error: {}".format(await self.auth_manager.get_user_id(), connection.id, e))
         messages: list[BaseMessage] = []
         results: list[ResultType] = []
         # Perform query and execute graph
         langsmith_api_key = user_with_model_details.langsmith_api_key
         cleaned_query = self._add_glossary_util(connection.glossary, query, history)
-        cleaned_query =  cleaned_query.strip(' \t\n\r')
+        long_term_memories = None
+        try:
+            long_term_memories = await self._retrieve_memory_safe(session, query, connection.id)
+        except Exception as e:
+            logger.error("Error While fetching long term memory", e)
+
+        cleaned_query = cleaned_query.strip(' \t\n\r')
         if connection.unique_value_dict is not None:
             cleaned_query = self._add_reverse_look_up_util(connection.unique_value_dict, cleaned_query)
 
         long_term_memory = None
-        try:
-            long_term_memory = await self.persistent_chat_memory.get_relevant_memories(session, cleaned_query)
-        except Exception as e:
-            logger.error("Error Getting Memory For user: {} connectionId: {} e: {}".format(await self.auth_manager.get_user_id(), connection.id, e))
+        if long_term_memories:
+            long_term_memory = "\n".join([memory.page_content for memory in long_term_memories])
+
         async for chunk in (query_graph.query(
             query=cleaned_query,
             options=QueryOptions(
@@ -234,7 +265,7 @@ class ConversationService:
                 llm_model=user_with_model_details.preferred_openai_model,
             ),
             history=history,
-            long_term_memory=long_term_memory
+            long_term_memory=long_term_memory 
         )):
             (chunk_messages, chunk_results) = chunk
             if chunk_messages is not None:
@@ -320,21 +351,52 @@ class ConversationService:
             ),
         )
 
-        background_tasks.add_task(self.save_memory, session, cleaned_query, stored_ai_message.content, results, conversation_id, connection.id)
-
-        await self.save_memory(session, cleaned_query, stored_ai_message.content, results, conversation_id, connection.id)
-
+        background_tasks.add_task(self.save_memory, session, query, stored_ai_message.content, results, conversation_id, connection.id)
+        
         yield stream_event_str(event=QueryStreamingEventType.STORED_MESSAGES.value, data=query_out.model_dump_json())
 
     async def save_memory(self, session:AsyncSession, user_message: str, ai_message:str, results:list, conversation_id:UUID, connection_id:UUID):
-
+        full_ai_response = ai_message
         for result in results:
-            try:
-                sql_result = SQLQueryStringResult.model_validate(result)
-                ai_message += "\n" + sql_result.sql
-            except ValidationError as e:
-                continue
-        await self.persistent_chat_memory.add_conversation(session, user_message, ai_message, conversation_id, connection_id)
+            if isinstance(result, SQLQueryStringResult):
+                full_ai_response += "\nGenerated SQL:\n" + result.sql
+
+        try:
+            user_details = await self.settings_service.get_model_details(session)
+            api_key = user_details.openai_api_key.get_secret_value()
+            base_url = user_details.openai_base_url
+            
+            history_messages = await self.get_conversation_history(session, connection_id, conversation_id)
+            history_str = "\n".join([f"{m.type}: {m.content}" for m in history_messages[-5:]]) 
+
+            llm = ChatOpenAI(api_key=api_key, base_url=base_url)
+            llm = llm.with_structured_output(MemoryAnalysisResponse)
+            
+            prompt_content = memory_analysis_prompt(user_query=user_message, ai_response=full_ai_response, conversation_history=history_str)
+           
+            analysis:MemoryAnalysisResponse = llm.invoke(
+                [
+                    {"role": "user", "content": prompt_content}
+                ],
+            )
+
+            if analysis.should_save and analysis.memory_content:
+                logger.info(f"Saving smart memory for conversation {conversation_id}: {analysis.memory_content}")
+                await self.add_conversation_memory(session, f"Memory Rule: {analysis.memory_content}", "", conversation_id, connection_id)
+            else:
+                logger.info(f"Skipping memory save for conversation {conversation_id} (not deemed valuable)")
+
+        except Exception as e:
+            logger.error(f"Error in smart memory processing: {e}")
+
+    async def add_conversation_memory(self, session: AsyncSession, user_message: str, ai_message: str, conversation_id: UUID, connection_id: UUID):
+        document = f"User: {user_message}\nAI: {ai_message}"
+        metadata = {
+            "conversation_id": str(conversation_id),
+            "connection_id": str(connection_id),
+            "timestamp": time.time()
+        }
+        await self.persistent_chat_memory.add_documents(session, config.vector_db_collection_memory, [document], [metadata])
 
     async def get_conversation_history(self, session: AsyncSession, connection_id: UUID, conversation_id: UUID) -> list[BaseMessage]:
         """
@@ -362,7 +424,7 @@ class ConversationService:
 
     async def build_memory(self, session:AsyncSession, connection_id: UUID):
 
-        if await self.persistent_chat_memory.collection_exists(session, connection_id):
+        if await self.persistent_chat_memory.collection_exists(session, collection_id=config.vector_db_collection_memory, filter_query={"connection_id": str(connection_id)}):
             return
 
         user_id = await self.auth_manager.get_user_id()
@@ -376,7 +438,7 @@ class ConversationService:
             ai_content = ""
             for message in conversations:
                 if message.role == BaseMessageType.HUMAN.value:
-                    human_content = ""
+                    human_content = message.content
                 if message.results:
                     sqls = [
                         SQLQueryStringResultContent.model_validate_json(result.content).sql
@@ -384,7 +446,7 @@ class ConversationService:
                     ]
                     ai_content += f"Generated SQL: {', '.join(sqls)} \n"
             if human_content or ai_content:
-                await self.persistent_chat_memory.add_conversation(session, human_content, ai_content, conversation_id, connection_id)
+                await self.add_conversation_memory(session, human_content, ai_content, conversation_id, connection_id)
 
 
     async def update_feedback(self, session: AsyncSession, message_feedback: MessageFeedBack) -> None:

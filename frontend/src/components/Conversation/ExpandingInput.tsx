@@ -83,7 +83,7 @@ const MessageSettingsPopup: React.FC<MessageSettingsPopupProps> = ({
                 name="data_security"
               />
             </SwitchField>
-            <SwitchField>
+            {/* <SwitchField>
               <Label className="flex items-center">Debug</Label>
               <Description>Enable this to debug result</Description>
               <Switch
@@ -94,7 +94,7 @@ const MessageSettingsPopup: React.FC<MessageSettingsPopupProps> = ({
                 }
                 name="debug"
               />
-            </SwitchField>
+            </SwitchField> */}
           </SwitchGroup>
         </Fieldset>
       </div>
@@ -174,31 +174,31 @@ const ExpandingInput = forwardRef<HTMLTextAreaElement, ExpandingInputProps>(
       if (showSuggestions && filteredSuggestions.length > 0) {
         if (e.key === "ArrowDown") {
           e.preventDefault();
-          setSelectedIndex((prev) => 
+          setSelectedIndex((prev) =>
             prev < filteredSuggestions.length - 1 ? prev + 1 : prev
           );
           return;
         }
-        
+
         if (e.key === "ArrowUp") {
           e.preventDefault();
           setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
           return;
         }
-        
+
         if (e.key === "Tab") {
           e.preventDefault();
           insertSuggestionAtCaret(filteredSuggestions[selectedIndex]);
           return;
         }
-        
+
         if (e.key === "Escape") {
           e.preventDefault();
           setShowSuggestions(false);
           return;
         }
       }
-      
+
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         handleSubmit();
@@ -221,7 +221,7 @@ const ExpandingInput = forwardRef<HTMLTextAreaElement, ExpandingInputProps>(
 
       const tags = autoCompleteList[suggestion];
       let wrappedSuggestion = suggestion;
-      
+
       if (tags?.includes("uniqueKey")) {
         wrappedSuggestion = `[${suggestion}]`;
       } else if (tags?.includes("glossary")) {

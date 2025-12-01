@@ -8,8 +8,9 @@ from langgraph.graph import END
 from openai import AuthenticationError, RateLimitError
 from pydantic import BaseModel, Field
 
+
 from dataline.errors import UserFacingError
-from dataline.models.llm_flow.schema import QueryResultSchema
+from dataline.models.llm_flow.schema import QueryResultSchema, ToolReason, SQLQueryStringResult
 from dataline.models.message.schema import BaseMessageType
 from dataline.services.llm_flow.prompt import PROMPT_VALIDATION_QUERY
 from dataline.services.llm_flow.toolkit import (
@@ -100,6 +101,12 @@ class CallToolNode(Node):
 
         output_messages: list[BaseMessage] = []
         results: list[QueryResultSchema] = []
+        
+        tool_reason = None
+        if last_message.content:
+            tool_reason = ToolReason(reason=str(last_message.content))
+            results.append(tool_reason)
+            
         if len(last_message.tool_calls) == 1 and last_message.tool_calls[0]["name"] == "multi_tool_use.parallel":
             # Attempt to extract nested tool calls from this buggy openai message
             last_message.tool_calls = cls.fix_openai_multi_tool_use_bug(last_message.tool_calls[0])
@@ -110,6 +117,12 @@ class CallToolNode(Node):
                 updates = tool.get_response(state, tool_call["args"], str(tool_call["id"]))
                 output_messages.extend(updates["messages"])
                 results.extend(updates["results"])
+ 
+                if tool_reason:
+                    for result in updates["results"]:
+                        if isinstance(result, SQLQueryStringResult):
+                            tool_reason.linked_id = result.ephemeral_id
+                            break
 
             else:
                 # We call the tool_executor and get back a response
@@ -194,15 +207,16 @@ class QueryValidationNode(Node):
                 last_message = message
                 break
 
-        model = ChatOpenAI(
-            model=state.options.llm_model,
-            base_url=state.options.openai_base_url,
-            api_key=state.options.openai_api_key,
-            temperature=1,
-            streaming=True,
-        )
-        model = model.with_structured_output(ValidationResponseFormatter)
         if state.validation_query:
+            model = ChatOpenAI(
+                model=state.options.llm_model,
+                base_url=state.options.openai_base_url,
+                api_key=state.options.openai_api_key,
+                temperature=1 if state.options.llm_model.startswith("gpt-5") else 0.2,
+                streaming=True,
+            )
+            model = model.with_structured_output(ValidationResponseFormatter)
+
             validation_prompt = PROMPT_VALIDATION_QUERY + "\n " + "Validation Prompt: " + state.validation_query+ "User Message: " + last_message.content
         else:
             return state_update(query_validation=True)

@@ -42,6 +42,7 @@ from dataline.services.file_parsers.excel_parser import ExcelParserService
 from dataline.services.llm_flow.llm_calls.database_description_generator import database_description_generator_prompt
 from dataline.services.llm_flow.utils import DatalineSQLDatabase as SQLDatabase
 from dataline.services.settings import SettingsService
+from dataline.utils.memory import PersistentChatMemory
 from dataline.utils.utils import (
     forward_connection_errors,
     generate_short_uuid,
@@ -412,7 +413,7 @@ class ConnectionService:
             client = OpenAI(api_key=api_key, base_url=base_url)
             prompt = database_description_generator_prompt(table, columns)
             description_generator_response = client.chat.completions.create(
-                model="gpt-5-mini",
+                model=config.memory_analyzer_model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=1
             )

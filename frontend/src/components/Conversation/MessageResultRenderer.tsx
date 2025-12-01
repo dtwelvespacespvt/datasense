@@ -1,21 +1,76 @@
 import {
   IResultType,
-  IMessageOptions,
   ISQLQueryStringResult,
   ISelectedTablesResult,
 } from "@components/Library/types";
 import { useMemo, useState } from "react";
 import { SelectedTablesDisplay } from "../Library/SelectedTablesDisplay";
 import { DynamicTable } from "../Library/DynamicTable";
-import { CodeBlock } from "./CodeBlock";
 import Chart from "../Library/Chart";
 import { useQueryClient } from "@tanstack/react-query";
 import { getMessagesQuery } from "@/hooks";
 import { useParams } from "@tanstack/react-router";
+import { ChevronRightIcon } from "@heroicons/react/24/outline";
 
 function classNames(...classes: string[]) {
   return classes.filter(Boolean).join(" ");
 }
+
+
+const ThinkingProcess = ({ results }: { results: IResultType[] }) => {
+  const [isOpen, setIsOpen] = useState(true);
+  if (!results || results.length === 0) return null;
+
+  const latestReason = (results[results.length - 1].content as { reason: string })
+    .reason;
+
+  return (
+    <div className="w-full mt-3">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors w-full text-left py-1"
+      >
+        <ChevronRightIcon
+          className={`w-4 h-4 shrink-0 transition-transform duration-300 ease-in-out ${isOpen ? "rotate-90" : "rotate-0"
+            }`}
+        />
+
+        <span className="font-medium text-sm">Thinking</span>
+        <div
+          className={`overflow-hidden transition-all duration-300 ease-in-out ${isOpen ? "opacity-0 max-w-0" : "opacity-100 max-w-full flex-1"
+            }`}
+        >
+          {latestReason && (
+            <span className="text-sm text-gray-400 ml-2 truncate block">
+              {latestReason}
+            </span>
+          )}
+        </div>
+      </button>
+      <div
+        className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+          }`}
+      >
+        <div className="overflow-hidden">
+          <div className="mt-2 pl-4 border-l-2 border-gray-200 dark:border-gray-700 space-y-4 pb-2">
+            {results.length > 0 ? (
+              results.map((result) => (
+                <div
+                  key={result.result_id}
+                  className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap"
+                >
+                  {(result.content as { reason: string }).reason}
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-gray-400 italic">No details available.</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const BACKGROUND_COLORS = [
   "bg-gradient-to-r from-teal-500/10 via-green-500/10 to-blue-500/10",
@@ -35,7 +90,7 @@ function hash(str: string): number {
 // function sortGroup(a: IResultType, b: IResultType) {
 //   if (a.type === "SELECTED_TABLES") return -1;
 //   if (b.type === "SELECTED_TABLES") return 1;
-  
+
 //   if (a.type === "SQL_QUERY_STRING_RESULT") return -1;
 //   if (b.type === "SQL_QUERY_STRING_RESULT") return 1;
 
@@ -80,7 +135,8 @@ function getResultGroups(results: IResultType[]) {
   filtered_results?.forEach((result) => {
     if (
       result.type === "SQL_QUERY_RUN_RESULT" ||
-      result.type === "CHART_GENERATION_RESULT"
+      result.type === "CHART_GENERATION_RESULT" ||
+      result.type === "TOOL_REASON"
     ) {
       const groupIndex = groups.findIndex(
         (group) =>
@@ -105,17 +161,27 @@ function getResultGroups(results: IResultType[]) {
 export const MessageResultRenderer = ({
   initialResults,
   messageId,
-  messageOptions,
 }: {
   initialResults: IResultType[];
   messageId: string;
-  messageOptions?: IMessageOptions;
 }) => {
   const [results, setResults] = useState(initialResults);
   const { groups: resultGroups, unlinkedGroup } = useMemo(
     () => getResultGroups(results),
     [results]
   );
+
+  const linkedToolReasons = resultGroups.flat().filter(
+    (r) => r.type === "TOOL_REASON"
+  );
+
+  const unlinkedToolReasons = linkedToolReasons.concat(unlinkedGroup.filter(
+    (r) => r.type === "TOOL_REASON"
+  ));
+  const otherUnlinkedResults = unlinkedGroup.filter(
+    (r) => r.type !== "TOOL_REASON"
+  );
+
   const queryClient = useQueryClient();
   const { conversationId } = useParams({ from: "/_app/chat/$conversationId" });
 
@@ -206,9 +272,12 @@ export const MessageResultRenderer = ({
 
   return (
     <>
-      {unlinkedGroup.length > 0 && (
+      {unlinkedToolReasons.length > 0 && (
+        <ThinkingProcess results={unlinkedToolReasons} />
+      )}
+      {otherUnlinkedResults.length > 0 && (
         <div className="flex flex-col gap-1 md:gap-3">
-          {unlinkedGroup.map(
+          {otherUnlinkedResults.map(
             (result) =>
               (result.type === "SELECTED_TABLES" && (
                 <SelectedTablesDisplay
@@ -235,8 +304,8 @@ export const MessageResultRenderer = ({
             // include hash of message id to randomize across messages
             resultGroups.length > 1
               ? BACKGROUND_COLORS[
-                  (hash(messageId) + index) % BACKGROUND_COLORS.length
-                ]
+              (hash(messageId) + index) % BACKGROUND_COLORS.length
+              ]
               : "",
             resultGroups.length > 1
               ? "border border-gray-500 rounded-xl p-4"
@@ -244,8 +313,12 @@ export const MessageResultRenderer = ({
             "flex flex-col gap-1 md:gap-3"
           )}
         >
-          {group.map(
-            (result) =>
+          {group.map((result) => {
+            const linkedSqlQuery = group.find(
+              (r) => r.type === "SQL_QUERY_STRING_RESULT"
+            ) as ISQLQueryStringResult | undefined;
+
+            return (
               (result.type === "SELECTED_TABLES" && (
                 <SelectedTablesDisplay
                   tables={result.content.tables}
@@ -253,26 +326,31 @@ export const MessageResultRenderer = ({
                 />
               )) ||
               (result.type === "SQL_QUERY_RUN_RESULT" && (
+
                 <DynamicTable
                   key={`message-${messageId}-table-${result.result_id}`}
                   data={result.content}
                   initialCreatedAt={new Date(result.created_at as string)}
                   linked_id={result.linked_id}
+                  linkedSqlQuery={linkedSqlQuery}
+                  messageId={messageId}
+                  updateLinkedSQLRunResult={updateLinkedSQLRunResult}
+                  onSaveSQLStringResult={onSaveSQLStringResult}
                 />
               )) ||
-              (result.type === "SQL_QUERY_STRING_RESULT" && messageOptions?.debug && (
-                <CodeBlock
-                  key={`message-${messageId}-code-${result.result_id}`}
-                  dialect={result.content.dialect}
-                  code={result.content.sql}
-                  resultId={result.result_id}
-                  onUpdateSQLRunResult={updateLinkedSQLRunResult}
-                  onSaveSQLStringResult={onSaveSQLStringResult(
-                    result.result_id
-                  )}
-                  forChart={result.content.for_chart}
-                />
-              )) ||
+              // (result.type === "SQL_QUERY_STRING_RESULT" && messageOptions?.debug && (
+              //   <CodeBlock
+              //     key={`message-${messageId}-code-${result.result_id}`}
+              //     dialect={result.content.dialect}
+              //     code={result.content.sql}
+              //     resultId={result.result_id}
+              //     onUpdateSQLRunResult={updateLinkedSQLRunResult}
+              //     onSaveSQLStringResult={onSaveSQLStringResult(
+              //       result.result_id
+              //     )}
+              //     forChart={result.content.for_chart}
+              //   />
+              // )) ||
               (result.type === "CHART_GENERATION_RESULT" && (
                 <Chart
                   resultId={result.result_id}
@@ -281,7 +359,8 @@ export const MessageResultRenderer = ({
                   initialCreatedAt={new Date(result.created_at as string)}
                 ></Chart>
               ))
-          )}
+            );
+          })}
         </div>
       ))}
     </>

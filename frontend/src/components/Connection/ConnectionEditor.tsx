@@ -864,16 +864,16 @@ export const ConnectionEditor = () => {
               Database Connection String
             </label>
             <div className="mt-2">
-              <TextInput
-                type="text"
-                name="name"
-                id="name"
+              <textarea
+                name="dsn"
+                id="dsn"
                 disabled={false}
                 value={editFields.dsn}
                 onChange={(e: any) => {
                   setEditFields({ ...editFields, dsn: e.target.value });
                   setUnsavedChanges(true);
                 }}
+                rows={3}
                 className={classNames(
                   isLoading
                     ? "animate-pulse bg-gray-900 text-gray-400"

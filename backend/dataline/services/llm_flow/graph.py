@@ -8,7 +8,6 @@ from langchain_core.tracers.langchain import LangChainTracer
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolExecutor
 from langsmith import Client
-from IPython.display import Image, display
 
 from dataline.config import config as dataline_config
 from dataline.models.llm_flow.schema import QueryOptions, ResultType
@@ -70,7 +69,6 @@ class QueryGraphService:
 
         graph = self.build_graph()
         app = graph.compile()
-        image_bytes = app.get_graph().draw_mermaid_png(output_file_path="hello.png")
         if not options.secure_data:
             self.db._sample_rows_in_table_info = 3
 
@@ -124,18 +122,21 @@ class QueryGraphService:
         local_time = time.localtime()
         formatted_time = time.strftime("%Y-%m-%d %H:%M:%S", local_time)
         prefix = SQL_PREFIX
-        prefix = prefix.format(dialect=self.toolkit.dialect, top_k=top_k, connection_prompt=self.connection.config.connection_prompt if self.connection.config and self.connection.config.connection_prompt else "", current_time =str(formatted_time), context = long_term_memory if long_term_memory else "")
+        
+        context_str = ""
+        if long_term_memory:
+            context_str = f"###Long Term memory retrieved for the query \n{long_term_memory}\n"
+
+        prefix = prefix.format(dialect=self.toolkit.dialect, top_k=top_k, connection_prompt=self.connection.config.connection_prompt if self.connection.config and self.connection.config.connection_prompt else "", current_time =str(formatted_time), context = context_str)
 
         if not history:
             return [
                 SystemMessage(content=prefix),
-                HumanMessage(content=query),
-                AIMessage(content=suffix),
+                HumanMessage(content=query)
             ]
         else:
             return [
                 SystemMessage(content=prefix),
                 *history,
-                HumanMessage(content=query),
-                AIMessage(content=suffix),
+                HumanMessage(content=query)
             ]

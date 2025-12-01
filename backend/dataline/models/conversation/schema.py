@@ -9,7 +9,7 @@ from dataline.models.llm_flow.schema import (
     ChartGenerationResult,
     SelectedTablesResult,
     SQLQueryRunResult,
-    SQLQueryStringResult,
+    SQLQueryStringResult, ToolReason,
 )
 from dataline.models.message.schema import MessageOut, MessageWithResultsOut
 from dataline.models.result.model import ResultModel
@@ -58,6 +58,8 @@ def render_stored_results(results: list[ResultModel]) -> list[ResultOut]:
             rendered_results.append(ChartGenerationResult.deserialize(result).serialize_result())
         elif QueryResultType(result.type) == QueryResultType.SQL_QUERY_RUN_RESULT:
             rendered_results.append(SQLQueryRunResult.deserialize(result).serialize_result())
+        elif QueryResultType(result.type) == QueryResultType.TOOL_REASON:
+            rendered_results.append(ToolReason.deserialize(result).serialize_result())
 
     return rendered_results
 

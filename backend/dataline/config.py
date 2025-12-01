@@ -63,6 +63,9 @@ class Config(BaseSettings):
     vector_db_type: str | None = None
     default_memory_conversation_depth: int = 3
     default_embedding_model: str = "text-embedding-3-small"
+    vector_db_collection_glossary: str | None = "glossary"
+    vector_db_collection_memory: str | None = "memory-v2"
+    memory_analyzer_model: str = "gpt-4.1-nano"
 
     default_conversation_history_limit: int = 1
     default_sql_row_limit: int = 200
