@@ -13,6 +13,7 @@ import { useParams } from "@tanstack/react-router";
 import { useGetConnections } from "./connections";
 import { isAxiosError } from "axios";
 import { MESSAGES_QUERY_KEY } from "./messages";
+import { IConversationWithMessagesWithResultsOut } from "@/components/Library/types";
 
 export const CONVERSATIONS_QUERY_KEY = ["CONVERSATIONS"];
 
@@ -96,15 +97,36 @@ export function useCreateConversation(
 
 export function useDeleteConversation(options = {}) {
   const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: (id: string) => api.deleteConversation(id),
-    onError() {
-      enqueueSnackbar({
-        variant: "error",
-        message: "Error deleting conversation",
+
+    onMutate: async (idToDelete) => {
+      await queryClient.cancelQueries({ queryKey: CONVERSATIONS_QUERY_KEY });
+
+      queryClient.setQueryData(
+        [...CONVERSATIONS_QUERY_KEY, "infinite"],
+        (oldData: any) => {
+          if (!oldData) return oldData;
+
+          return {
+            ...oldData,
+            pages: oldData.pages.map((page: IConversationWithMessagesWithResultsOut[]) =>
+              page.filter((conversation) => conversation.id !== idToDelete)
+            ),
+          };
+        }
+      );
+      queryClient.setQueryData<IConversationWithMessagesWithResultsOut[]>(CONVERSATIONS_QUERY_KEY, (oldData) => {
+        if (!oldData) return [];
+        return oldData.filter((conversation) => conversation.id !== idToDelete);
       });
     },
-    onSettled() {
+    onError: () => {
+      enqueueSnackbar({
+        variant: "error",
+        message: "Error deleting conversation.",
+      });
       queryClient.invalidateQueries({ queryKey: CONVERSATIONS_QUERY_KEY });
     },
     ...options,
@@ -133,7 +155,7 @@ export function useSubmitFeedback(options = {}) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ message_id, is_positive, content }: { message_id: string; is_positive: boolean; content: string }) =>
-    api.submitFeedback({message_id, is_positive, content}),
+      api.submitFeedback({ message_id, is_positive, content }),
     onError() {
       enqueueSnackbar({
         variant: "error",
